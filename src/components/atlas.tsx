@@ -33,8 +33,10 @@ export function Atlas({
       zoomControl: true,
       attributionControl: true,
       scrollWheelZoom: false,
+      keyboard: false,
       zoomSnap: 0.25,
     });
+    el.tabIndex = -1;
     L.tileLayer(TILES, {
       attribution: "Esri",
       maxZoom: 18,
@@ -44,7 +46,10 @@ export function Atlas({
     layerRef.current = layer;
 
     const ro = new ResizeObserver(() => {
-      map.invalidateSize();
+      const x = window.scrollX;
+      const y = window.scrollY;
+      map.invalidateSize({ animate: false, pan: false });
+      window.scrollTo(x, y);
     });
     ro.observe(el);
 
@@ -90,15 +95,18 @@ export function Atlas({
       markers.push(marker);
     }
 
-    map.invalidateSize();
+    const x = window.scrollX;
+    const y = window.scrollY;
+    map.invalidateSize({ animate: false, pan: false });
     if (markers.length === 0) {
-      map.setView([31.5, 34.85], 7);
+      map.setView([31.5, 34.85], 7, { animate: false });
     } else if (markers.length === 1) {
-      map.setView(markers[0].getLatLng(), 13);
+      map.setView(markers[0].getLatLng(), 13, { animate: false });
     } else {
       const group = L.featureGroup(markers);
-      map.fitBounds(group.getBounds(), { padding: [36, 36], maxZoom: 12 });
+      map.fitBounds(group.getBounds(), { padding: [36, 36], maxZoom: 12, animate: false });
     }
+    window.scrollTo(x, y);
   }, [spots, locale, navigate, activeSlug]);
 
   const focused = spots

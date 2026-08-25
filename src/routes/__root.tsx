@@ -5,6 +5,7 @@ import {
   Scripts,
   useRouterState,
 } from "@tanstack/react-router";
+import { useLayoutEffect } from "react";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
@@ -57,6 +58,7 @@ function RootDocument() {
         <script dangerouslySetInnerHTML={{ __html: LOOK_BOOT }} />
       </head>
       <body className="min-h-dvh bg-bg text-fg">
+        <ScrollToTop />
         <PreviewHostBridge />
         <AuthProvider>
           <PlaceProvider>
@@ -87,6 +89,16 @@ function RootDocument() {
       </body>
     </html>
   );
+}
+
+function ScrollToTop() {
+  const href = useRouterState({ select: (s) => s.location.href });
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [href]);
+  return null;
 }
 
 function AppFrame() {
