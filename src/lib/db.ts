@@ -136,7 +136,7 @@ async function createPgliteSql(): Promise<Sql> {
   // — so an HMR reload after adding a migration file applies it live — with
   // passes serialized on a global chain so concurrent callers never double-apply.
   const migrate = async (): Promise<void> => {
-    // Includes 0010_saved_clubs and later schema files.
+    // Includes 0011_strava and later schema files.
     const migrations = import.meta.glob("/migrations/*.sql", {
       query: "?raw",
       import: "default",

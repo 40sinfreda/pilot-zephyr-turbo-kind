@@ -6,7 +6,6 @@ export function getRouter() {
   return createRouter({
     routeTree,
     defaultErrorComponent: AppErrorComponent,
-    scrollRestoration: true,
-    scrollRestorationBehavior: "instant",
+    scrollRestoration: false,
   });
 }

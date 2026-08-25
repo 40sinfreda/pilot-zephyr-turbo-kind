@@ -107,8 +107,8 @@ export type Profile = {
 export type Stats = {
   spots: number;
   gatherings: number;
-  kmLogged: number;
-  swims: number;
+  groups: number;
+  stories: number;
 };
 
 export type FeedItem =

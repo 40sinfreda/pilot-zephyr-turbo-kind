@@ -148,8 +148,8 @@ export const getHomeStats = createServerFn({ method: "GET" })
     const rows = await sql<{
       spots: unknown;
       gatherings: unknown;
-      km_logged: unknown;
-      swims: unknown;
+      groups: unknown;
+      stories: unknown;
     }>`
       select
         (select count(*)::int from spots s
@@ -160,21 +160,20 @@ export const getHomeStats = createServerFn({ method: "GET" })
           where e.starts_at > now()
             and (${country}::text is null or s.country = ${country})
             and (${region}::text is null or s.region = ${region})) as gatherings,
-        (select coalesce(sum(w.distance_km), 0) from swims w
-          join spots s on s.id = w.spot_id
+        (select count(*)::int from clubs c
+          where (${country}::text is null or c.country = ${country})
+            and (${region}::text is null or c.region = ${region})) as groups,
+        (select count(*)::int from dispatches d
+          left join spots s on s.id = d.spot_id
           where (${country}::text is null or s.country = ${country})
-            and (${region}::text is null or s.region = ${region})) as km_logged,
-        (select count(*)::int from swims w
-          join spots s on s.id = w.spot_id
-          where (${country}::text is null or s.country = ${country})
-            and (${region}::text is null or s.region = ${region})) as swims
+            and (${region}::text is null or s.region = ${region})) as stories
     `;
     const row = rows[0];
     const stats: Stats = {
       spots: num(row?.spots),
       gatherings: num(row?.gatherings),
-      kmLogged: num(row?.km_logged),
-      swims: num(row?.swims),
+      groups: num(row?.groups),
+      stories: num(row?.stories),
     };
     return stats;
   });
@@ -227,20 +226,6 @@ export const listFeed = createServerFn({ method: "GET" })
     const sql = await getSql();
     const country = data.country ?? null;
     const region = data.region ?? null;
-    const swimRows = await sql<SwimRow>`
-      select
-        w.id, w.user_id, p.display_name as swimmer_name, w.spot_id,
-        s.name as spot_name, s.slug as spot_slug, s.city, s.country,
-        w.swam_on, w.distance_km, w.duration_min, w.water_temp_c,
-        w.conditions, w.feeling, w.notes, w.created_at, w.source
-      from swims w
-      join spots s on s.id = w.spot_id
-      left join profiles p on p.user_id = w.user_id
-      where (${country}::text is null or s.country = ${country})
-        and (${region}::text is null or s.region = ${region})
-      order by w.created_at desc
-      limit 20
-    `;
     const dispatchRows = await sql<{
       id: number;
       title: string;
@@ -262,9 +247,7 @@ export const listFeed = createServerFn({ method: "GET" })
       limit 12
     `;
 
-    const items: FeedItem[] = [
-      ...swimRows.map((row) => ({ kind: "swim" as const, swim: mapSwim(row) })),
-      ...dispatchRows.map((row) => {
+    const items: FeedItem[] = dispatchRows.map((row) => {
         const dispatch: Dispatch = {
           id: row.id,
           title: row.title,
@@ -276,18 +259,9 @@ export const listFeed = createServerFn({ method: "GET" })
           publishedAt: iso(row.published_at),
         };
         return { kind: "dispatch" as const, dispatch };
-      }),
-    ];
+      });
 
-    items.sort((a, b) => {
-      const ta =
-        a.kind === "swim" ? a.swim.createdAt : a.dispatch.publishedAt;
-      const tb =
-        b.kind === "swim" ? b.swim.createdAt : b.dispatch.publishedAt;
-      return tb.localeCompare(ta);
-    });
-
-    return items.slice(0, 18);
+    return items;
   });
 
 export const listSpotSwims = createServerFn({ method: "GET" })
@@ -1137,9 +1111,16 @@ export const listClubMembers = createServerFn({ method: "GET" })
     const club = await sql<{ admin_user_id: string }>`
       select admin_user_id from clubs where id = ${clubId} limit 1
     `;
-    if (!club[0] || club[0].admin_user_id !== context.userId) {
+    if (!club[0]) throw new Error("Not found");
+    const member = await sql<{ user_id: string }>`
+      select user_id from club_members
+      where club_id = ${clubId} and user_id = ${context.userId}
+      limit 1
+    `;
+    if (!member[0] && club[0].admin_user_id !== context.userId) {
       throw new Error("Forbidden");
     }
+    const adminId = club[0].admin_user_id;
     const rows = await sql<{
       user_id: string;
       display_name: string | null;
@@ -1156,7 +1137,7 @@ export const listClubMembers = createServerFn({ method: "GET" })
         userId: row.user_id,
         displayName: row.display_name?.trim() || "Swimmer",
         joinedAt: iso(row.joined_at),
-        isAdmin: row.user_id === context.userId,
+        isAdmin: row.user_id === adminId,
       }),
     );
   });
@@ -1198,7 +1179,7 @@ export const listSpotClubs = createServerFn({ method: "GET" })
     return rows.map((row) => mapClub(row, {}));
   });
 
-const watchSourceSchema = z.enum(["garmin", "suunto", "samsung", "apple"]);
+const watchSourceSchema = z.enum(["garmin", "suunto", "samsung", "apple", "strava"]);
 
 const importWorkoutSchema = z.object({
   source: watchSourceSchema,
@@ -1281,6 +1262,9 @@ export const unlinkWatch = createServerFn({ method: "POST" })
       delete from watch_links
       where user_id = ${context.userId} and source = ${source}
     `;
+    if (source === "strava") {
+      await sql`delete from strava_links where user_id = ${context.userId}`;
+    }
     return { ok: true };
   });
 

@@ -84,6 +84,7 @@ export function sourceLabel(source: string | undefined, locale: Locale): string 
   if (source === "suunto") return t(locale, "source.suunto");
   if (source === "samsung") return t(locale, "source.samsung");
   if (source === "apple") return t(locale, "source.apple");
+  if (source === "strava") return t(locale, "source.strava");
   return t(locale, "source.manual");
 }
 

@@ -9,22 +9,21 @@ import {
   localeForCountry,
 } from "./place";
 import { applyLook, isLook, type Look } from "./look";
-import { isMark, type MarkId } from "./mark";
 
 type PlaceState = {
   hydrated: boolean;
   editing: boolean;
+  setupStarted: boolean;
   place: Place | null;
   locale: Locale;
   localeLocked: boolean;
   look: Look;
-  mark: MarkId;
   setHydrated: () => void;
   setEditing: (v: boolean) => void;
+  setSetupStarted: () => void;
   setPlace: (place: Place, opts?: { lockLocale?: boolean }) => void;
   setLocale: (locale: Locale) => void;
   setLook: (look: Look) => void;
-  setMark: (mark: MarkId) => void;
   applyFromProfile: (row: {
     country: string | null;
     locale: string | null;
@@ -38,15 +37,16 @@ export const usePlaceStore = create<PlaceState>()(
     (set, get) => ({
       hydrated: false,
       editing: false,
+      setupStarted: false,
       place: null,
-      locale: "en",
+      locale: "he",
       localeLocked: false,
       look: "night",
-      mark: "crest",
       setHydrated: () => set({ hydrated: true }),
       setEditing: (editing) => set({ editing }),
+      setSetupStarted: () => set({ setupStarted: true }),
       setPlace: (place, opts) => {
-        const next: Partial<PlaceState> = { place, editing: false };
+        const next: Partial<PlaceState> = { place, editing: false, setupStarted: true };
         if (!get().localeLocked && !opts?.lockLocale) {
           next.locale = localeForCountry(place.country);
         }
@@ -57,7 +57,6 @@ export const usePlaceStore = create<PlaceState>()(
         applyLook(look);
         set({ look });
       },
-      setMark: (mark) => set({ mark }),
       applyFromProfile: (row) => {
         if (!row.country) return;
         const scope: Place["scope"] =
@@ -79,13 +78,12 @@ export const usePlaceStore = create<PlaceState>()(
         locale: s.locale,
         localeLocked: s.localeLocked,
         look: s.look,
-        mark: s.mark,
+        setupStarted: s.setupStarted,
       }),
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<PlaceState>;
         const look = isLook(saved.look) ? saved.look : current.look;
-        const mark = isMark(saved.mark) ? saved.mark : current.mark;
-        return { ...current, ...saved, look, mark };
+        return { ...current, ...saved, look };
       },
       onRehydrateStorage: () => (state) => {
         if (state?.look) applyLook(state.look);

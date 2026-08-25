@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { Link } from "@tanstack/react-router";
 import { Settings, X } from "lucide-react";
 import { LookChips } from "@/components/look-picker";
-import { MarkPicker } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { getOfficeAccess } from "@/lib/tideline/office";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -44,8 +43,6 @@ export function SettingsBody({
 
   return (
     <div className="space-y-6">
-      <MarkPicker compact={compact} />
-
       <section className="space-y-2">
         <p className="text-xs uppercase tracking-widest text-faint">{t("settings.place")}</p>
         <p className="text-sm text-fg">{placeLabel}</p>
@@ -75,16 +72,6 @@ export function SettingsBody({
 
       <section className="space-y-2">
         <LookChips />
-      </section>
-
-      <section className="space-y-2">
-        <p className="text-xs uppercase tracking-widest text-faint">{t("nav.sync")}</p>
-        {!compact ? <p className="text-sm text-muted">{t("settings.syncLead")}</p> : null}
-        <Button asChild size="sm" variant="outline">
-          <Link to="/sync" onClick={onNavigate}>
-            {t("settings.openSync")}
-          </Link>
-        </Button>
       </section>
 
       {showOffice ? (

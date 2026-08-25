@@ -31,10 +31,10 @@ export function FeedList({ items }: { items: FeedItem[] }) {
         <p className="mt-3 font-display text-lg text-fg">{t("feed.quiet")}</p>
         <p className="mt-1 text-sm text-muted">{t("feed.quietLead")}</p>
         <Link
-          to="/log"
+          to="/groups"
           className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
         >
-          {t("nav.log")}
+          {t("nav.groups")}
         </Link>
       </Card>
     );

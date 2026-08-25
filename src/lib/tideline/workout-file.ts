@@ -1,6 +1,7 @@
+import { unzipSync, gunzipSync } from "fflate";
 import { haversineKm } from "./geo";
 
-export const WATCH_SOURCES = ["garmin", "suunto", "samsung", "apple"] as const;
+export const WATCH_SOURCES = ["garmin", "suunto", "samsung", "apple", "strava"] as const;
 export type WatchSource = (typeof WATCH_SOURCES)[number];
 
 export type ParsedWorkout = {
@@ -25,11 +26,19 @@ const FIT_EPOCH = Date.UTC(1989, 11, 31);
 
 function sourceFromName(name: string, fallback: WatchSource): WatchSource {
   const n = name.toLowerCase();
+  if (/(strava)/.test(n)) return "strava";
   if (/(garmin|fenix|forerunner|instinct|enduro|connect)/.test(n)) return "garmin";
   if (/(suunto|ambit|spartan|vertical|ocean)/.test(n)) return "suunto";
   if (/(samsung|galaxy|shealth|health-connect)/.test(n)) return "samsung";
   if (/(apple|iphone|watch-os|healthfit|workoutdoors|fitness)/.test(n)) return "apple";
   return fallback;
+}
+
+function isSwimType(value: string): boolean {
+  const v = value.toLowerCase();
+  if (!v) return false;
+  if (/pool|lap/.test(v) && !/open/.test(v)) return false;
+  return /swim|open.?water|openwater/.test(v);
 }
 
 function ymd(d: Date): string {
@@ -390,32 +399,65 @@ function parseJson(text: string, fileName: string, source: WatchSource): ParsedW
   return out;
 }
 
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (quoted && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (c === "," && !quoted) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 function parseCsv(text: string, fileName: string, source: WatchSource): ParsedWorkout[] {
-  const lines = text.trim().split(/\r?\n/);
+  const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) throw new Error("empty");
-  const head = lines[0].split(",").map((s) => s.trim().toLowerCase());
-  const di = head.findIndex((h) => h.includes("distance"));
-  const ti = head.findIndex((h) => h.includes("duration") || h.includes("time"));
-  const si = head.findIndex((h) => h.includes("start") || h.includes("date"));
-  if (di < 0) throw new Error("empty");
+  const head = splitCsvLine(lines[0]).map((s) => s.trim().toLowerCase());
+  const typeI = head.findIndex((h) => h === "activity type" || h === "type" || h === "sport");
+  const nameI = head.findIndex((h) => h === "activity name" || h === "name" || h === "title");
+  const distI = head.findIndex((h) => h.includes("distance"));
+  const timeI = head.findIndex((h) => h === "elapsed time" || h.includes("duration") || h.includes("time"));
+  const dateI = head.findIndex((h) => h.includes("date") || h.includes("start"));
+  const fileI = head.findIndex((h) => h === "filename" || h === "file name");
+  if (distI < 0) throw new Error("empty");
   const out: ParsedWorkout[] = [];
   for (const line of lines.slice(1)) {
-    const cols = line.split(",");
-    const dist = Number(cols[di]);
-    const dur = ti >= 0 ? Number(cols[ti]) : 40;
-    const start = si >= 0 ? new Date(cols[si]) : new Date();
+    const cols = splitCsvLine(line);
+    const type = typeI >= 0 ? cols[typeI] ?? "" : "swim";
+    if (typeI >= 0 && !isSwimType(type)) continue;
+    const dist = Number((cols[distI] ?? "").replace(/[^\d.]/g, ""));
+    const durRaw = timeI >= 0 ? Number((cols[timeI] ?? "").replace(/[^\d.]/g, "")) : 40;
+    const start = dateI >= 0 ? new Date(cols[dateI] ?? "") : new Date();
     if (!Number.isFinite(dist) || dist <= 0) continue;
+    const durationMin = durRaw > 200 ? durRaw / 60 : durRaw;
+    const title = nameI >= 0 ? cols[nameI] : undefined;
+    const track = fileI >= 0 ? cols[fileI] : "";
     out.push(
       finish({
-        fileName,
+        fileName: track || fileName,
         source,
         startedAt: Number.isNaN(start.getTime()) ? new Date() : start,
         distanceKm: dist > 100 ? dist / 1000 : dist,
-        durationMin: dur > 200 ? dur / 60 : dur,
+        durationMin,
         waterTempC: null,
         points: [],
-        sport: "swim",
-        subSport: "open_water",
+        sport: type || "swim",
+        subSport: /open/.test(type.toLowerCase()) ? "open_water" : type.toLowerCase().includes("pool") ? "lap_swimming" : "open_water",
+        title,
       }),
     );
   }
@@ -423,17 +465,90 @@ function parseCsv(text: string, fileName: string, source: WatchSource): ParsedWo
   return out;
 }
 
-export async function parseWorkoutFile(
-  file: File,
-  preferred: WatchSource,
-): Promise<ParsedWorkout[]> {
-  const source = sourceFromName(file.name, preferred);
-  const name = file.name;
+function asFile(name: string, bytes: Uint8Array): File {
+  const leaf = name.split("/").pop() ?? name;
+  return new File([bytes as BlobPart], leaf);
+}
+
+function maybeGunzip(name: string, bytes: Uint8Array): { name: string; bytes: Uint8Array } {
+  if (!name.toLowerCase().endsWith(".gz")) return { name, bytes };
+  return {
+    name: name.slice(0, -3),
+    bytes: gunzipSync(bytes),
+  };
+}
+
+async function parseZipArchive(file: File, preferred: WatchSource): Promise<ParsedWorkout[]> {
+  const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const names = Object.keys(entries).filter((n) => !n.startsWith("__MACOSX") && !n.endsWith("/"));
+  const looksStrava =
+    preferred === "strava" ||
+    /strava/i.test(file.name) ||
+    names.some((n) => /(^|\/)activities\.csv$/i.test(n));
+  const source: WatchSource = looksStrava ? "strava" : sourceFromName(file.name, preferred);
+
+  const csvName = names.find((n) => /(^|\/)activities\.csv$/i.test(n));
+  const swimFiles = new Set<string>();
+  if (csvName) {
+    const csvText = new TextDecoder().decode(entries[csvName]);
+    const lines = csvText.trim().split(/\r?\n/);
+    if (lines.length >= 2) {
+      const head = splitCsvLine(lines[0]).map((s) => s.trim().toLowerCase());
+      const typeI = head.findIndex((h) => h === "activity type" || h === "type");
+      const fileI = head.findIndex((h) => h === "filename" || h === "file name");
+      if (typeI >= 0 && fileI >= 0) {
+        for (const line of lines.slice(1)) {
+          const cols = splitCsvLine(line);
+          if (!isSwimType(cols[typeI] ?? "")) continue;
+          const rel = (cols[fileI] ?? "").replace(/^\.\//, "");
+          if (rel) {
+            swimFiles.add(rel);
+            swimFiles.add(rel.replace(/\.gz$/i, ""));
+          }
+        }
+      }
+    }
+  }
+
+  const out: ParsedWorkout[] = [];
+  const trackNames = names.filter((n) => /\.(gpx|tcx|fit)(\.gz)?$/i.test(n));
+  for (const n of trackNames) {
+    const leaf = n.split("/").pop() ?? n;
+    const wanted =
+      swimFiles.size > 0
+        ? [...swimFiles].some((f) => n.endsWith(f) || f.endsWith(leaf) || n.includes(f))
+        : !looksStrava || /swim|open.?water|owsw/i.test(n);
+    if (swimFiles.size && !wanted) continue;
+    try {
+      const unpacked = maybeGunzip(n, entries[n]);
+      out.push(...(await parseBytes(unpacked.name, unpacked.bytes, source)));
+    } catch {
+      /* skip non-swims */
+    }
+  }
+  if (!out.length && csvName) {
+    try {
+      out.push(...parseCsv(new TextDecoder().decode(entries[csvName]), csvName, source));
+    } catch {
+      /* empty csv */
+    }
+  }
+  if (!out.length) throw new Error("empty");
+  return out;
+}
+
+async function parseBytes(name: string, bytes: Uint8Array, source: WatchSource): Promise<ParsedWorkout[]> {
   const lower = name.toLowerCase();
   if (lower.endsWith(".fit")) {
-    return parseFit(await file.arrayBuffer(), name, source);
+    const copy = bytes.slice();
+    return parseFit(copy.buffer as ArrayBuffer, name, source);
   }
-  const text = await file.text();
+  const text = new TextDecoder().decode(bytes);
+  return parseText(name, text, source);
+}
+
+async function parseText(name: string, text: string, source: WatchSource): Promise<ParsedWorkout[]> {
+  const lower = name.toLowerCase();
   const trimmed = text.trim();
   if (lower.endsWith(".gpx") || trimmed.startsWith("<gpx") || trimmed.includes("<gpx")) {
     return parseGpx(text, name, source);
@@ -455,4 +570,24 @@ export async function parseWorkoutFile(
     }
   }
   throw new Error("unsupported");
+}
+
+export async function parseWorkoutFile(
+  file: File,
+  preferred: WatchSource,
+): Promise<ParsedWorkout[]> {
+  const source = sourceFromName(file.name, preferred);
+  const name = file.name;
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed") {
+    return parseZipArchive(file, preferred);
+  }
+  if (lower.endsWith(".gz")) {
+    const unpacked = maybeGunzip(name, new Uint8Array(await file.arrayBuffer()));
+    return parseBytes(unpacked.name, unpacked.bytes, source);
+  }
+  if (lower.endsWith(".fit")) {
+    return parseFit(await file.arrayBuffer(), name, source);
+  }
+  return parseText(name, await file.text(), source);
 }

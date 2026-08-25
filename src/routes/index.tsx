@@ -17,8 +17,7 @@ import {
   listGatherings,
   listSpots,
 } from "@/lib/tideline/api";
-import { formatKm } from "@/lib/tideline/format";
-import { usePlaceFilter, usePlaceStore, useT } from "@/lib/tideline/place-store";
+import { usePlaceFilter, useT } from "@/lib/tideline/place-store";
 import { useFavorites } from "@/lib/tideline/use-favorites";
 import { useLoad } from "@/lib/tideline/use-load";
 import { SEA } from "@/lib/tideline/sea";
@@ -29,7 +28,6 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const t = useT();
-  const locale = usePlaceStore((s) => s.locale);
   const filter = usePlaceFilter();
   const key = `${filter.country ?? ""}:${filter.region ?? ""}`;
   const spots = useLoad(() => listSpots({ data: filter }), [key]);
@@ -64,7 +62,7 @@ function Home() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="bg-bg/40 backdrop-blur-sm">
-              <Link to="/log">{t("home.log")}</Link>
+              <Link to="/groups">{t("home.groupsTitle")}</Link>
             </Button>
           </div>
           <dl className="mt-12 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -73,15 +71,8 @@ function Home() {
               label={t("home.statGatherings")}
               value={String(stats.data?.gatherings ?? 0)}
             />
-            <Stat
-              label={t("home.statKm")}
-              value={
-                stats.data && stats.data.kmLogged > 0
-                  ? formatKm(stats.data.kmLogged, locale)
-                  : t("home.kmEmpty")
-              }
-            />
-            <Stat label={t("home.statSwims")} value={String(stats.data?.swims ?? 0)} />
+            <Stat label={t("home.statGroups")} value={String(stats.data?.groups ?? 0)} />
+            <Stat label={t("home.statStories")} value={String(stats.data?.stories ?? 0)} />
           </dl>
         </div>
       </SeaBackdrop>

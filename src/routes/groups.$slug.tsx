@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { initials } from "@/lib/tideline/format";
 import {
   deleteClub,
   getClub,
@@ -61,6 +62,16 @@ function GroupPage() {
   const [busy, setBusy] = useState(false);
   const fav = useFavorites();
   const isSaved = Boolean(club && fav.isClubSaved(club.id));
+  const isMember = Boolean(access.data?.isMember);
+  const isAdmin = Boolean(access.data?.isAdmin);
+  const members = useLoad(async () => {
+    if (!isMember || !access.data) return [];
+    try {
+      return await listClubMembers({ data: access.data.id });
+    } catch {
+      return [];
+    }
+  }, [access.data?.id, isMember]);
 
   if (!loaded && !access.loading) {
     return (
@@ -94,6 +105,7 @@ function GroupPage() {
       await joinClub({ data: clubId });
       toast(t("toast.joined"));
       access.reload();
+      members.reload();
     } catch (err) {
       if (isUnauthorized(err)) window.location.href = "/login";
     } finally {
@@ -176,15 +188,63 @@ function GroupPage() {
         <p className="mt-4 text-sm text-faint">{t("groups.whatsappMissing")}</p>
       ) : null}
 
+      {isMember ? (
+        <section className="mt-12">
+          <h2 className="font-display text-2xl text-fg">{t("group.members")}</h2>
+          <p className="mt-1 text-sm text-muted">{t("group.membersLead")}</p>
+          {(members.data ?? []).length === 0 && !members.loading ? (
+            <p className="mt-4 text-sm text-faint">{t("group.membersEmpty")}</p>
+          ) : (
+            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              {(members.data ?? []).map((m) => (
+                <li
+                  key={m.userId}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-surface px-4 py-3 shadow-[var(--shadow-border)]"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-raised text-xs font-medium text-accent">
+                      {initials(m.displayName)}
+                    </span>
+                    <span className="truncate text-sm text-fg">
+                      {m.displayName}
+                      {m.isAdmin ? ` · ${t("groups.admin")}` : ""}
+                    </span>
+                  </span>
+                  {isAdmin && !m.isAdmin ? (
+                    <button
+                      type="button"
+                      className="h-11 shrink-0 px-2 text-xs text-faint hover:text-danger"
+                      onClick={async () => {
+                        try {
+                          await removeClubMember({
+                            data: { clubId: club.id, userId: m.userId },
+                          });
+                          members.reload();
+                          access.reload();
+                        } catch {
+                          toast.error(t("toast.clubFail"));
+                        }
+                      }}
+                    >
+                      {t("group.remove")}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : (
+        <p className="mt-10 text-sm text-muted">{t("group.membersLocked")}</p>
+      )}
+
       {club.isAdmin ? (
         <AdminPanel
           club={club}
           onSaved={access.reload}
           onDeleted={() => void navigate({ to: "/groups" })}
         />
-      ) : (
-        <p className="mt-10 text-sm text-faint">{t("groups.onlyAdminManages")}</p>
-      )}
+      ) : null}
     </Page>
   );
 }
@@ -204,7 +264,6 @@ function AdminPanel({
   const spots = useLoad(() => listSpots({ data: filter }), [
     `${filter.country ?? ""}:${filter.region ?? ""}`,
   ]);
-  const members = useLoad(() => listClubMembers({ data: club.id }), [club.id]);
   const [name, setName] = useState(club.name);
   const [description, setDescription] = useState(club.description);
   const [whatsappUrl, setWhatsappUrl] = useState(club.whatsappUrl ?? "");
@@ -219,9 +278,8 @@ function AdminPanel({
   }, [club.id, club.name, club.description, club.whatsappUrl, club.spotId]);
 
   return (
-    <div className="mt-12 grid gap-10 lg:grid-cols-2">
-      <form
-        className="space-y-4 rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]"
+    <form
+        className="mt-12 max-w-xl space-y-4 rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]"
         onSubmit={async (e) => {
           e.preventDefault();
           if (whatsappUrl && !isWhatsappUrl(whatsappUrl)) {
@@ -296,43 +354,6 @@ function AdminPanel({
           </Button>
         </div>
       </form>
-
-      <div>
-        <h2 className="font-display text-2xl text-fg">{t("group.members")}</h2>
-        <ul className="mt-4 space-y-2">
-          {(members.data ?? []).map((m) => (
-            <li
-              key={m.userId}
-              className="flex items-center justify-between rounded-lg bg-surface px-4 py-3 shadow-[var(--shadow-border)]"
-            >
-              <span className="text-sm text-fg">
-                {m.displayName}
-                {m.isAdmin ? ` · ${t("groups.admin")}` : ""}
-              </span>
-              {!m.isAdmin ? (
-                <button
-                  type="button"
-                  className="h-11 px-2 text-xs text-faint hover:text-danger"
-                  onClick={async () => {
-                    try {
-                      await removeClubMember({
-                        data: { clubId: club.id, userId: m.userId },
-                      });
-                      members.reload();
-                      onSaved();
-                    } catch {
-                      toast.error(t("toast.clubFail"));
-                    }
-                  }}
-                >
-                  {t("group.remove")}
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
   );
 }
 

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
-import { Logo, TideMark } from "@/components/logo";
+import { BrandMark, Logo } from "@/components/logo";
 import { AuthSlot } from "@/components/auth-slot";
 import { SettingsMenu } from "@/components/settings-panel";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,6 @@ export function Header() {
     { to: "/groups", label: t("nav.groups") },
     { to: "/favorites", label: t("nav.favorites") },
     { to: "/events", label: t("nav.gatherings") },
-    { to: "/log", label: t("nav.log") },
   ] as const;
 
   return (
@@ -79,7 +78,7 @@ export function Header() {
               onClick={() => setOpen(false)}
               className="rounded-md px-3 py-3 text-base text-fg hover:bg-raised"
             >
-              {t("nav.logbook")}
+              {t("nav.profile")}
             </Link>
             <Link
               to="/settings"
@@ -108,7 +107,7 @@ export function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-2.5">
           <span className="grid size-10 place-items-center rounded-xl bg-raised shadow-[var(--shadow-border)]">
-            <TideMark className="size-8" />
+            <BrandMark className="size-8" />
           </span>
           <div>
             <p className="font-display text-lg font-semibold text-fg">Tideline</p>

@@ -54,6 +54,7 @@ import {
   type OfficeClub,
   type OfficePerson,
 } from "@/lib/tideline/office";
+import { getStravaAppSettings, saveStravaApp, STRAVA_CLIENT_ID } from "@/lib/tideline/strava";
 import type { Gathering, Spot, Swim } from "@/lib/tideline/types";
 
 export const Route = createFileRoute("/office")({
@@ -67,18 +68,18 @@ type Tab =
   | "gatherings"
   | "stories"
   | "reports"
-  | "swims"
-  | "people";
+  | "people"
+  | "apps";
 
-const TABS: { key: Tab; label: "office.tab.home" | "office.tab.spots" | "office.tab.groups" | "office.tab.gatherings" | "office.tab.stories" | "office.tab.reports" | "office.tab.swims" | "office.tab.people" }[] = [
+const TABS: { key: Tab; label: "office.tab.home" | "office.tab.spots" | "office.tab.groups" | "office.tab.gatherings" | "office.tab.stories" | "office.tab.reports" | "office.tab.people" | "office.tab.apps" }[] = [
   { key: "home", label: "office.tab.home" },
   { key: "spots", label: "office.tab.spots" },
   { key: "groups", label: "office.tab.groups" },
   { key: "gatherings", label: "office.tab.gatherings" },
   { key: "stories", label: "office.tab.stories" },
   { key: "reports", label: "office.tab.reports" },
-  { key: "swims", label: "office.tab.swims" },
   { key: "people", label: "office.tab.people" },
+  { key: "apps", label: "office.tab.apps" },
 ];
 
 function OfficePage() {
@@ -163,8 +164,8 @@ function OfficePage() {
           {tab === "gatherings" ? <GatheringsPanel /> : null}
           {tab === "stories" ? <StoriesPanel /> : null}
           {tab === "reports" ? <ReportsPanel /> : null}
-          {tab === "swims" ? <SwimsPanel /> : null}
           {tab === "people" ? <PeoplePanel /> : null}
+          {tab === "apps" ? <StravaPanel /> : null}
         </>
       ) : (
         <p className="mt-8 text-muted">{t("office.forbidden")}</p>
@@ -185,7 +186,6 @@ function Overview() {
     { label: "office.tab.gatherings", value: s.gatherings },
     { label: "office.tab.stories", value: s.stories },
     { label: "office.tab.reports", value: s.reports },
-    { label: "office.tab.swims", value: s.swims },
     { label: "office.tab.people", value: s.people },
   ];
   return (
@@ -1142,6 +1142,67 @@ function PersonForm({
         }}
       />
       {person.isOwner ? <p className="text-xs text-faint">{t("office.cannotOwner")}</p> : null}
+    </form>
+  );
+}
+
+function StravaPanel() {
+  const t = useT();
+  const loaded = useLoad(() => getStravaAppSettings(), []);
+  const [clientId, setClientId] = useState(STRAVA_CLIENT_ID);
+  const [clientSecret, setClientSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const host = typeof window !== "undefined" ? window.location.host : "pilot-zephyr-turbo-kind.grok.me";
+
+  if (loaded.loading) return <Skeleton className="mt-8 h-48 rounded-xl" />;
+
+  return (
+    <form
+      className="mt-8 max-w-lg space-y-4 rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await saveStravaApp({
+            data: {
+              clientId: clientId || loaded.data?.clientId || "",
+              clientSecret,
+            },
+          });
+          toast.success(t("office.stravaSaved"));
+          setClientSecret("");
+          void loaded.reload();
+        } catch (err) {
+          if (isUnauthorized(err)) window.location.href = "/login";
+          else toast.error(t("office.fail"));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <h2 className="font-display text-2xl text-fg">{t("office.stravaTitle")}</h2>
+      <p className="text-sm leading-relaxed text-muted">{t("office.stravaLead")}</p>
+      <p className="text-xs leading-relaxed text-faint">{t("office.stravaDomain", { host })}</p>
+      <Field label={t("office.stravaId")}>
+        <Input
+          required
+          defaultValue={loaded.data?.clientId || STRAVA_CLIENT_ID}
+          onChange={(e) => setClientId(e.target.value)}
+          autoComplete="off"
+        />
+      </Field>
+      <Field label={t("office.stravaSecret")}>
+        <Input
+          type="password"
+          value={clientSecret}
+          onChange={(e) => setClientSecret(e.target.value)}
+          placeholder={loaded.data?.hasSecret ? "••••••••" : ""}
+          autoComplete="off"
+        />
+      </Field>
+      <Button type="submit" disabled={busy}>
+        {busy ? t("office.saving") : t("office.save")}
+      </Button>
     </form>
   );
 }

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Tideline">
+  <rect width="512" height="512" rx="108" fill="#06151c"/>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#2ee6c8" stroke-width="14" opacity="0.35"/>
+  <path d="M164 148h184" stroke="#f8f3e8" stroke-width="34" stroke-linecap="round"/>
+  <path d="M256 148v148" stroke="#f8f3e8" stroke-width="34" stroke-linecap="round"/>
+  <path d="M96 348c54-74 106 52 160 0s106 74 160 0" fill="none" stroke="#2ee6c8" stroke-width="28" stroke-linecap="round"/>
+  <path d="M96 408c54-54 106 38 160 0s106 54 160 0" fill="none" stroke="#2ee6c8" stroke-width="18" stroke-linecap="round" opacity="0.45"/>
+</svg>

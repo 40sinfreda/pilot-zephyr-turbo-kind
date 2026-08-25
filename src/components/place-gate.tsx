@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Logo } from "@/components/logo";
+import { BrandMark, Logo } from "@/components/logo";
 import { TideRule } from "@/components/tide-rule";
 import { Button } from "@/components/ui/button";
 import { SeaBackdrop } from "@/components/sea-photo";
@@ -17,9 +17,13 @@ export function PlaceGate() {
   const locale = usePlaceStore((s) => s.locale);
   const current = usePlaceStore((s) => s.place);
   const hydrated = usePlaceStore((s) => s.hydrated);
+  const editing = usePlaceStore((s) => s.editing);
+  const setupStarted = usePlaceStore((s) => s.setupStarted);
   const setPlace = usePlaceStore((s) => s.setPlace);
   const setLocale = usePlaceStore((s) => s.setLocale);
+  const setSetupStarted = usePlaceStore((s) => s.setSetupStarted);
   const { user } = useCurrentUserState();
+  const showWelcome = hydrated && !current && !editing && !setupStarted;
 
   const [country, setCountry] = useState(current?.country ?? "Israel");
   const [scope, setScope] = useState<PlaceScope>(current?.scope ?? "country");
@@ -79,9 +83,36 @@ export function PlaceGate() {
         : "bg-bg/55 text-fg backdrop-blur-sm hover:bg-bg/75",
     );
 
+  if (showWelcome) {
+    return (
+      <SeaBackdrop src={SEA.swimmers} className="min-h-dvh" priority>
+        <div className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center px-4 py-12 sm:px-6">
+          <span className="grid size-16 place-items-center rounded-2xl bg-raised/80 shadow-[var(--shadow-border)] backdrop-blur-sm">
+            <BrandMark className="size-12" />
+          </span>
+          <p className="mt-5 font-display text-sm font-semibold uppercase tracking-[0.38em] text-fg">
+            Tideline
+          </p>
+          <h1 className="mt-10 font-display text-5xl font-semibold tracking-tight text-fg sm:text-7xl">
+            {t("welcome.title")}
+          </h1>
+          <p className="mt-5 max-w-xl text-base leading-relaxed text-fg/90 sm:text-lg">
+            {t("welcome.lead")}
+          </p>
+          <div className="mt-5 max-w-xs">
+            <TideRule />
+          </div>
+          <Button className="mt-12 w-fit" size="lg" onClick={() => setSetupStarted()}>
+            {t("welcome.start")}
+          </Button>
+        </div>
+      </SeaBackdrop>
+    );
+  }
+
   return (
-    <SeaBackdrop src={SEA.swimmers} className="min-h-[calc(100dvh-4rem)]" priority>
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16">
+    <SeaBackdrop src={SEA.swimmers} className="min-h-dvh" priority>
+      <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
         <Logo />
         <p className="mt-10 text-xs font-medium uppercase tracking-widest text-accent">
           {t("place.kicker")}

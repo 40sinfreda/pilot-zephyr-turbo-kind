@@ -30,9 +30,13 @@ export function Atlas({
     if (!el) return;
 
     const map = L.map(el, {
-      zoomControl: true,
+      zoomControl: false,
       attributionControl: true,
+      dragging: false,
+      touchZoom: false,
       scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
       keyboard: false,
       zoomSnap: 0.25,
     });

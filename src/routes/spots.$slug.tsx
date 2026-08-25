@@ -4,7 +4,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Page } from "@/components/shell";
 import { Atlas } from "@/components/atlas";
-import { FeedList } from "@/components/feed";
 import { GatheringCard } from "@/components/gathering-card";
 import { ClubCard } from "@/components/club-card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ import {
   listReports,
   listSpotClubs,
   listSpotGatherings,
-  listSpotSwims,
   listSpots,
   toggleRsvp,
 } from "@/lib/tideline/api";
@@ -49,20 +47,18 @@ export const Route = createFileRoute("/spots/$slug")({
       return {
         spot: null,
         spots: [] as Awaited<ReturnType<typeof listSpots>>,
-        swims: [] as Awaited<ReturnType<typeof listSpotSwims>>,
         gatherings: [] as Awaited<ReturnType<typeof listSpotGatherings>>,
         reports: [] as Awaited<ReturnType<typeof listReports>>,
         clubs: [] as Awaited<ReturnType<typeof listSpotClubs>>,
       };
     }
-    const [spots, swims, gatherings, reports, clubs] = await Promise.all([
+    const [spots, gatherings, reports, clubs] = await Promise.all([
       listSpots({ data: { country: spot.country } }),
-      listSpotSwims({ data: spot.id }),
       listSpotGatherings({ data: spot.id }),
       listReports({ data: spot.id }),
       listSpotClubs({ data: spot.id }),
     ]);
-    return { spot, spots, swims, gatherings, reports, clubs };
+    return { spot, spots, gatherings, reports, clubs };
   },
   component: SpotPage,
 });
@@ -72,13 +68,6 @@ function SpotPage() {
   const locale = usePlaceStore((s) => s.locale);
   const loaded = Route.useLoaderData();
   const { user, isPending } = useCurrentUserState();
-  const swims = useLoad(
-    () =>
-      loaded.spot
-        ? listSpotSwims({ data: loaded.spot.id })
-        : Promise.resolve([]),
-    [loaded.spot?.id],
-  );
   const gatherings = useLoad(
     () =>
       loaded.spot
@@ -115,11 +104,6 @@ function SpotPage() {
   }
 
   const s = localizedSpot(loaded.spot, locale);
-  const feedItems = (swims.data ?? loaded.swims).map((swim) => ({
-    kind: "swim" as const,
-    swim,
-  }));
-
   const photo = spotPhoto(s.slug, s.waterType);
 
   return (
@@ -153,11 +137,6 @@ function SpotPage() {
             <Heart className={cn("size-4", isSaved && "fill-current")} />
             {isSaved ? t("fav.added") : t("fav.add")}
           </Button>
-          <Button asChild>
-            <Link to="/log" search={{ spot: s.slug }}>
-              {t("spot.log")}
-            </Link>
-          </Button>
         </div>
       </div>
 
@@ -186,16 +165,6 @@ function SpotPage() {
       ) : null}
 
       <div className="mt-12 grid gap-10 lg:grid-cols-2">
-        <section>
-          <h2 className="font-display text-2xl text-fg">{t("spot.loggedHere")}</h2>
-          <div className="mt-4">
-            {swims.loading && !loaded.swims.length ? (
-              <Skeleton className="h-32 rounded-xl" />
-            ) : (
-              <FeedList items={feedItems} />
-            )}
-          </div>
-        </section>
         <section className="space-y-10">
           <div>
             <div className="flex flex-wrap items-baseline justify-between gap-2">

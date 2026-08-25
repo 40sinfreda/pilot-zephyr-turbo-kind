@@ -267,3 +267,113 @@ html[dir="rtl"] .sea-scrim-side {
       color-mix(in oklab, var(--tide-bg) 78%, transparent) 100%
     );
 }
+
+.tide-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: grid;
+  place-items: center;
+  background: var(--tide-bg);
+  color: var(--tide-fg);
+  overflow: hidden;
+}
+
+.tide-boot-leave {
+  opacity: 0;
+  transition: opacity 480ms var(--ease-out);
+  pointer-events: none;
+}
+
+.tide-boot-sea {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 42%;
+  pointer-events: none;
+}
+
+.tide-boot-wave {
+  position: absolute;
+  inset: 0 -50% 0 0;
+  background:
+    radial-gradient(ellipse 42% 70% at 20% 80%, color-mix(in oklab, var(--tide-accent) 22%, transparent), transparent 70%),
+    radial-gradient(ellipse 36% 60% at 70% 90%, color-mix(in oklab, var(--tide-accent) 14%, transparent), transparent 70%);
+  animation: tide-wave 7s linear infinite;
+}
+
+.tide-boot-wave-2 {
+  opacity: 0.55;
+  animation-duration: 11s;
+  animation-direction: reverse;
+}
+
+.tide-boot-inner {
+  position: relative;
+  width: min(20rem, calc(100% - 2.5rem));
+  text-align: center;
+}
+
+.tide-boot-mark {
+  width: 4.5rem;
+  height: 4.5rem;
+  margin-inline: auto;
+  margin-bottom: 1.1rem;
+  display: grid;
+  place-items: center;
+  border-radius: 1.1rem;
+  background: var(--tide-raised);
+  box-shadow: var(--shadow-border);
+  color: var(--tide-fg);
+  animation: tide-breathe 2.8s var(--ease-out) infinite;
+}
+
+.tide-boot-name {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.tide-boot-copy {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--tide-muted);
+}
+
+.tide-boot-meter {
+  margin-top: 1.25rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--tide-fg) 12%, transparent);
+  overflow: hidden;
+}
+
+.tide-boot-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tide-accent);
+  transition: width 180ms linear;
+}
+
+@keyframes tide-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes tide-wave {
+  from { transform: translateX(0); }
+  to { transform: translateX(-20%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tide-boot-mark,
+  .tide-boot-wave,
+  .tide-boot-wave-2 {
+    animation: none;
+  }
+  .tide-boot-leave {
+    transition: none;
+  }
+}
+
