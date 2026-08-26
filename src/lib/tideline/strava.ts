@@ -49,13 +49,8 @@ export async function loadStravaApp() {
   const stored = rows[0];
   if (stored?.client_id && stored.client_secret) return stored;
 
-  let fallbackSecret = "";
-  try {
-    const creds = await import("./strava-credentials.server");
-    fallbackSecret = creds.STRAVA_CLIENT_SECRET;
-  } catch {
-    fallbackSecret = "";
-  }
+  const fallbackSecret =
+    (typeof process !== "undefined" && process.env.STRAVA_CLIENT_SECRET?.trim()) || "";
   const clientId = stored?.client_id || STRAVA_CLIENT_ID;
   const secret = stored?.client_secret || fallbackSecret;
   if (!clientId || !secret) {
@@ -87,38 +82,27 @@ export const getStravaStatus = createServerFn({ method: "GET" })
     const app = await loadStravaApp();
     const link = await loadStravaLink(context.userId);
     return {
-      configured: Boolean(app?.client_id && app?.client_secret),
+      configured: Boolean(app?.client_id && app.client_secret),
       connected: Boolean(link),
+      athleteId: link?.athlete_id ?? null,
     };
   });
 
-export const getStravaAppSettings = createServerFn({ method: "GET" })
+export const saveStravaAppCredentials = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => {
-    await requireOwner(context.userId);
-    const app = await loadStravaApp();
-    return {
-      clientId: app?.client_id || STRAVA_CLIENT_ID,
-      hasSecret: Boolean(app?.client_secret),
-    };
-  });
-
-export const saveStravaApp = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
-  .validator((input: unknown) =>
-    z.object({
-      clientId: z.string().trim().min(1).max(40),
-      clientSecret: z.string().trim().max(80),
-    }).parse(input),
+  .validator((input) =>
+    z
+      .object({
+        clientId: z.string().trim().min(1).max(80),
+        clientSecret: z.string().trim().min(1).max(200),
+      })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const sql = await requireOwner(context.userId);
-    const existing = await loadStravaApp();
-    const secret = data.clientSecret || existing?.client_secret;
-    if (!secret) throw new Error("Need secret");
     await sql`
       insert into app_integrations (provider, client_id, client_secret)
-      values ('strava', ${data.clientId}, ${secret})
+      values ('strava', ${data.clientId}, ${data.clientSecret})
       on conflict (provider) do update set
         client_id = excluded.client_id,
         client_secret = excluded.client_secret,
@@ -127,60 +111,16 @@ export const saveStravaApp = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export async function createOauthState(userId: string) {
-  const sql = await getSql();
-  const state = crypto.randomUUID();
-  await sql`
-    insert into strava_oauth_states (state, user_id)
-    values (${state}, ${userId})
-  `;
-  return state;
+function ymd(iso: string) {
+  return iso.slice(0, 10);
 }
 
-export async function takeOauthState(state: string) {
-  const sql = await getSql();
-  const rows = await sql<{ user_id: string; created_at: unknown }>`
-    select user_id, created_at from strava_oauth_states where state = ${state} limit 1
-  `;
-  await sql`delete from strava_oauth_states where state = ${state}`;
-  const row = rows[0];
-  if (!row) return null;
-  const created = row.created_at instanceof Date ? row.created_at : new Date(String(row.created_at));
-  if (Number.isNaN(created.getTime()) || Date.now() - created.getTime() > 15 * 60 * 1000) return null;
-  return row.user_id;
-}
+async function refreshTokenIfNeeded(link: LinkRow) {
+  const expires = link.expires_at instanceof Date ? link.expires_at.getTime() : Number(link.expires_at) * 1000;
+  if (Number.isFinite(expires) && expires > Date.now() + 60_000) return link;
 
-export async function exchangeStravaCode(code: string, redirectUri: string) {
   const app = await loadStravaApp();
-  if (!app) throw new Error("not-configured");
-  const body = new URLSearchParams({
-    client_id: app.client_id,
-    client_secret: app.client_secret,
-    code,
-    grant_type: "authorization_code",
-  });
-  // Strava also accepts redirect_uri on the token call
-  body.set("redirect_uri", redirectUri);
-  const res = await fetch("https://www.strava.com/oauth/token", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  if (!res.ok) throw new Error("token");
-  return (await res.json()) as {
-    access_token: string;
-    refresh_token: string;
-    expires_at: number;
-    athlete?: { id: number };
-  };
-}
-
-async function accessTokenFor(userId: string): Promise<string | null> {
-  const app = await loadStravaApp();
-  const link = await loadStravaLink(userId);
-  if (!app || !link) return null;
-  const expires = link.expires_at instanceof Date ? link.expires_at : new Date(String(link.expires_at));
-  if (expires.getTime() - 60_000 > Date.now()) return link.access_token;
+  if (!app?.client_id || !app.client_secret) throw new Error("Strava not configured");
 
   const body = new URLSearchParams({
     client_id: app.client_id,
@@ -190,10 +130,10 @@ async function accessTokenFor(userId: string): Promise<string | null> {
   });
   const res = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error("Strava refresh failed");
   const json = (await res.json()) as {
     access_token: string;
     refresh_token: string;
@@ -204,88 +144,47 @@ async function accessTokenFor(userId: string): Promise<string | null> {
     update strava_links
     set access_token = ${json.access_token},
         refresh_token = ${json.refresh_token},
-        expires_at = ${new Date(json.expires_at * 1000).toISOString()}
-    where user_id = ${userId}
+        expires_at = to_timestamp(${json.expires_at})
+    where user_id = ${link.user_id}
   `;
-  return json.access_token;
+  return {
+    ...link,
+    access_token: json.access_token,
+    refresh_token: json.refresh_token,
+    expires_at: json.expires_at,
+  };
 }
 
-export async function saveStravaLink(
-  userId: string,
-  token: {
-    access_token: string;
-    refresh_token: string;
-    expires_at: number;
-    athlete?: { id: number };
-  },
-) {
+export async function importStravaActivities(userId: string) {
+  let link = await loadStravaLink(userId);
+  if (!link) throw new Error("Not connected");
+  link = await refreshTokenIfNeeded(link);
+
   const sql = await getSql();
-  const athleteId = String(token.athlete?.id ?? "0");
-  await sql`
-    insert into strava_links (user_id, athlete_id, access_token, refresh_token, expires_at)
-    values (
-      ${userId}, ${athleteId}, ${token.access_token}, ${token.refresh_token},
-      ${new Date(token.expires_at * 1000).toISOString()}
-    )
-    on conflict (user_id) do update set
-      athlete_id = excluded.athlete_id,
-      access_token = excluded.access_token,
-      refresh_token = excluded.refresh_token,
-      expires_at = excluded.expires_at
-  `;
-  await sql`
-    insert into watch_links (user_id, source)
-    values (${userId}, 'strava')
-    on conflict (user_id, source) do nothing
-  `;
-}
-
-function isOpenWater(a: StravaActivity) {
-  const sport = `${a.sport_type ?? ""} ${a.type ?? ""}`.toLowerCase();
-  if (sport.includes("openwaterswim") || sport.includes("open_water") || sport.includes("open water")) {
-    return true;
-  }
-  if (!sport.includes("swim")) return false;
-  return Array.isArray(a.start_latlng) && a.start_latlng.length === 2;
-}
-
-function ymd(iso: string) {
-  const d = iso.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date(iso).toISOString().slice(0, 10);
-}
-
-async function loadAllSpots() {
-  const sql = await getSql();
-  return sql<{ id: number; slug: string; name: string; lat: number; lng: number }>`
+  const spots = await sql<{ id: number; slug: string; name: string; lat: number; lng: number }>`
     select id, slug, name, lat, lng from spots
   `;
-}
 
-export async function importStravaActivities(userId: string): Promise<{ ok: number; skipped: number }> {
-  const token = await accessTokenFor(userId);
-  if (!token) return { ok: 0, skipped: 0 };
-  const res = await fetch("https://www.strava.com/api/v3/athlete/activities?per_page=50", {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error("activities");
+  const res = await fetch("https://www.strava.com/api/v3/athlete/activities?per_page=30",
+    { headers: { Authorization: `Bearer ${link.access_token}` } },
+  );
+  if (!res.ok) throw new Error("Strava activities failed");
   const activities = (await res.json()) as StravaActivity[];
-  const swims = activities.filter(isOpenWater).slice(0, 40);
-  const spots = await loadAllSpots();
-  const sql = await getSql();
+
   let ok = 0;
   let skipped = 0;
-
-  for (const a of swims) {
+  for (const a of activities) {
+    const sport = (a.sport_type || a.type || "").toLowerCase();
+    if (!sport.includes("swim") && sport !== "swim") continue;
     const key = `strava:${a.id}`;
-    const dup = await sql<{ id: number }>`
-      select id from swims
-      where user_id = ${userId} and source = 'strava' and source_key = ${key}
-      limit 1
+    const existing = await sql<{ id: number }>`
+      select id from swims where user_id = ${userId} and source_key = ${key} limit 1
     `;
-    if (dup[0]) {
+    if (existing[0]) {
       skipped += 1;
       continue;
     }
+
     const lat = a.start_latlng?.[0] ?? null;
     const lng = a.start_latlng?.[1] ?? null;
     let chosen: { id: number; slug: string; name: string; lat: number; lng: number } | undefined;
